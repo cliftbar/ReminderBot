@@ -162,6 +162,7 @@ async def delete_reminder(interaction: Interaction, index: int):
     if not (0 <= idx <= len(reminders)):
         await interaction.response.send_message(f"{index} isn't a valid ID")
     deleted = reminders.pop(idx)
+    deleted[0].cancel()
     all_futures[interaction.user.id] = reminders
     rewrite_all_reminders()
     await interaction.response.send_message(f"Deleted {deleted[1].list_rep()}")
