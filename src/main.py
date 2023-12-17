@@ -155,31 +155,39 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
 @reminder_cmds.command(name="reminder_list", description="Get the current reminders",
                        guilds=app_conf.server.get_sync_guilds())
 async def list_reminders(interaction: Interaction):
-    reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
-    dt_now: datetime = datetime.now(pytz.UTC)
-    filter_reminders = [r for r in reminders if dt_now < r[1].get_runtime()]
-    list_text = ("Reminders: \n"
-                 + "\n".join([f"({i + 1}) {r[1].list_rep()}" for i, r in enumerate(filter_reminders)]))
-    log_info(f"reminders listed for {interaction.user.id}", list_reminders.name)
-    await interaction.response.send_message(list_text)
+    try:
+        reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
+        dt_now: datetime = datetime.now(pytz.UTC)
+        filter_reminders = [r for r in reminders if dt_now < r[1].get_runtime()]
+        list_text = ("Reminders: \n"
+                     + "\n".join([f"({i + 1}) {r[1].list_rep()}" for i, r in enumerate(filter_reminders)]))
+        log_info(f"reminders listed for {interaction.user.id}", list_reminders.name)
+        await interaction.response.send_message(list_text)
+    except Exception as e:
+        log_info(f"reminders listed failed for {interaction.user.id}", list_reminders.name)
+        await interaction.response.send_message("I couldn't list your reminders")
 
 
 @reminder_cmds.command(name="delete_reminder", description="Delete a reminder by index",
                        guilds=app_conf.server.get_sync_guilds())
 async def delete_reminder(interaction: Interaction, index: int):
-    dt_now: datetime = datetime.now(pytz.UTC)
-    idx = index - 1
-    reminders: list[tuple[Future, Reminder]] = [r for r in dt_now < all_futures.get(interaction.user.id, []) if
-                                                r[1].get_runtime()]
+    try:
+        dt_now: datetime = datetime.now(pytz.UTC)
+        idx = index - 1
+        reminders: list[tuple[Future, Reminder]] = [r for r in all_futures.get(interaction.user.id, []) if
+                                                    dt_now < r[1].get_runtime()]
 
-    if not (0 <= idx <= len(reminders)):
-        await interaction.response.send_message(f"{index} isn't a valid ID")
-    deleted = reminders.pop(idx)
-    deleted[0].cancel()
-    all_futures[interaction.user.id] = reminders
-    rewrite_all_reminders()
-    log_info(f"deleted reminder for {interaction.user.id}", delete_reminder.name)
-    await interaction.response.send_message(f"Deleted {deleted[1].list_rep()}")
+        if not (0 <= idx <= len(reminders)):
+            await interaction.response.send_message(f"{index} isn't a valid ID")
+        deleted = reminders.pop(idx)
+        deleted[0].cancel()
+        all_futures[interaction.user.id] = reminders
+        rewrite_all_reminders()
+        log_info(f"deleted reminder for {interaction.user.id}", delete_reminder.name)
+        await interaction.response.send_message(f"Deleted {deleted[1].list_rep()}")
+    except Exception as e:
+        log_info(str(e), delete_reminder.name)
+        await interaction.response.send_message(f"I couldn't delete index {index}")
 
 
 @reminder_cmds.command(name="reminder_help", description="Print Help Text", guilds=app_conf.server.get_sync_guilds())
