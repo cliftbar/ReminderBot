@@ -166,8 +166,10 @@ async def list_reminders(interaction: Interaction):
 @reminder_cmds.command(name="delete_reminder", description="Delete a reminder by index",
                        guilds=app_conf.server.get_sync_guilds())
 async def delete_reminder(interaction: Interaction, index: int):
+    dt_now: datetime = datetime.now(pytz.UTC)
     idx = index - 1
-    reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
+    reminders: list[tuple[Future, Reminder]] = [r for r in dt_now < all_futures.get(interaction.user.id, []) if
+                                                r[1].get_runtime()]
 
     if not (0 <= idx <= len(reminders)):
         await interaction.response.send_message(f"{index} isn't a valid ID")
