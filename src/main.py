@@ -56,6 +56,20 @@ async def on_ready():
     log_info(f"Logged on as {discord_client.user}", on_ready.__name__)
 
 
+def create_future(r: Reminder):
+    reminder_future: Future = asyncio.ensure_future(send_reminder(r))
+
+    fl = all_futures.get(r.author, [])
+    fl.append((reminder_future, r))
+    all_futures[r.author] = fl
+
+
+def rewrite_all_reminders():
+    reminders: list[Reminder] = [rt[1] for rtl in all_futures.values() for rt in rtl]
+    app_conf.server.get_reminder_file().open("w").close()
+    for rem in reminders:
+        rem.store(app_conf.server.get_reminder_file())
+
 async def before_serving():
     await discord_client.login(app_conf.server.bot_token)
 
@@ -68,11 +82,7 @@ async def before_serving():
             r: Reminder = Reminder(**json.loads(li))
             if datetime.now(tz=pytz.UTC) < r.get_runtime():
                 reminders.append(r)
-                reminder_future: Future = asyncio.ensure_future(send_reminder(r))
-
-                fl = all_futures.get(r.author, [])
-                fl.append((reminder_future, r))
-                all_futures[r.author] = fl
+                create_future(r)
 
     if app_conf.server.clean_reminders_on_startup:
         app_conf.server.get_reminder_file().open("w").close()
@@ -125,10 +135,7 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
         reminder: Reminder = Reminder(parsed_time.isoformat(), interaction.followup.url, message, interaction.user.id,
                                       ping_you)
         reminder.store(app_conf.server.get_reminder_file())
-        reminder_future: Future = asyncio.ensure_future(send_reminder(reminder))
-        fl = all_futures.get(interaction.user.id, [])
-        fl.append((reminder_future, reminder))
-        all_futures[interaction.user.id] = fl
+        create_future(reminder)
 
         await interaction.response.send_message(
             f"reminder set for '{remind_at}' at {parsed_time.strftime('%a %d %b %Y, %I:%M:%S%p')}")
@@ -142,8 +149,22 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
                        guilds=app_conf.server.get_sync_guilds())
 async def list_reminders(interaction: Interaction):
     reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
+    list_text = ("Reminders: \n"
+                 + "\n".join([f"({i+1}) {r[1].list_rep()}" for i, r in enumerate(reminders)]))
+    await interaction.response.send_message(list_text)
 
-    await interaction.response.send_message("\n".join([r[1].list_rep() for r in reminders]))
+@reminder_cmds.command(name="delete_reminder", description="Delete a reminder by index",
+                       guilds=app_conf.server.get_sync_guilds())
+async def delete_reminder(interaction: Interaction, index: int):
+    idx = index - 1
+    reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
+
+    if not (0 <= idx <= len(reminders)):
+        await interaction.response.send_message(f"{index} isn't a valid ID")
+    deleted = reminders.pop(idx)
+    all_futures[interaction.user.id] = reminders
+    rewrite_all_reminders()
+    await interaction.response.send_message(f"Deleted {deleted[1].list_rep()}")
 
 
 @reminder_cmds.command(name="reminder_help", description="Print Help Text", guilds=app_conf.server.get_sync_guilds())
