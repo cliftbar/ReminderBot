@@ -67,8 +67,10 @@ def create_future(r: Reminder):
 def rewrite_all_reminders():
     reminders: list[Reminder] = [rt[1] for rtl in all_futures.values() for rt in rtl]
     app_conf.server.get_reminder_file().open("w").close()
+    dt_now: datetime = datetime.now(pytz.UTC)
     for rem in reminders:
-        rem.store(app_conf.server.get_reminder_file())
+        if dt_now < rem.get_runtime():
+            rem.store(app_conf.server.get_reminder_file())
 
 
 async def before_serving():
@@ -150,8 +152,10 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
                        guilds=app_conf.server.get_sync_guilds())
 async def list_reminders(interaction: Interaction):
     reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
+    dt_now: datetime = datetime.now(pytz.UTC)
+    filter_reminders = [r for r in reminders if dt_now < r[1].get_runtime()]
     list_text = ("Reminders: \n"
-                 + "\n".join([f"({i + 1}) {r[1].list_rep()}" for i, r in enumerate(reminders)]))
+                 + "\n".join([f"({i + 1}) {r[1].list_rep()}" for i, r in enumerate(filter_reminders)]))
     log_info(f"reminders listed for {interaction.user.id}", list_reminders.name)
     await interaction.response.send_message(list_text)
 
