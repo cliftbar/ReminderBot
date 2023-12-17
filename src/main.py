@@ -98,14 +98,17 @@ async def before_serving():
 
 
 async def send_reminder(reminder: Reminder):
-    dt_now: datetime = datetime.now(tz=pytz.UTC)
-    log_debug(f"reminder created ({reminder.runtime}): {reminder.message}", send_reminder.__name__)
-    await asyncio.sleep((reminder.get_runtime() - dt_now).total_seconds())
-    log_debug(f"sending reminder", send_reminder.__name__)
+    try:
+        dt_now: datetime = datetime.now(tz=pytz.UTC)
+        log_debug(f"reminder created ({reminder.runtime}): {reminder.message}", send_reminder.__name__)
+        await asyncio.sleep((reminder.get_runtime() - dt_now).total_seconds())
+        log_debug(f"sending reminder", send_reminder.__name__)
 
-    author_ping: str = f" <@{reminder.author}>" if reminder.ping_you else ""
-    await reminder.get_followup(discord_client).send(f"Reminder{author_ping}: {reminder.message}")
-    log_info(f"reminder sent to {reminder.author}", send_reminder.__name__)
+        author_ping: str = f" <@{reminder.author}>" if reminder.ping_you else ""
+        await reminder.get_followup(discord_client).send(f"Reminder{author_ping}: {reminder.message}")
+        log_info(f"reminder sent to {reminder.author}", send_reminder.__name__)
+    except Exception as e:
+        log_info(str(e), send_reminder.__name__)
 
 
 @reminder_cmds.command(name="remind", description="Add a reminder using natural language",
