@@ -10,3 +10,5 @@ Adds simple reminders to discord
         Examples: 'in 4 hours', 'tomorrow at 9am', '8pm'
 /help: print help text
 ```
+
+Click [Authorize URL](https://discord.com/api/oauth2/authorize?client_id=1185775843012771850&permissions=139586882624&scope=bot+applications.commands) to add the bot.
