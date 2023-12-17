@@ -10,6 +10,7 @@ import pytz
 from discord import Interaction, Webhook, Intents, Client, app_commands
 from discord.app_commands import CommandTree
 from parsedatetime import parsedatetime, Calendar
+from pytz.tzinfo import StaticTzInfo, DstTzInfo
 
 from config import app_conf
 from util.basic_log import log_info, log_debug, log_warn
@@ -86,9 +87,13 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
     try:
 
         dt_now: datetime = datetime.now(tz=pytz.UTC)
+        msg_tz: StaticTzInfo | DstTzInfo = pytz.timezone(tz)
+
+        msg_context_time: datetime = interaction.created_at.astimezone(msg_tz)
 
         cal: Calendar = parsedatetime.Calendar()
-        parsed_time, flag = cal.parseDT(datetimeString=remind_at, tzinfo=pytz.timezone(tz))
+        parsed_time, flag = cal.parseDT(datetimeString=remind_at, sourceTime=msg_context_time, tzinfo=msg_tz)
+
         if flag == 0:
             log_warn(f"{remind_at} failed to parse", set_reminder.name)
             await interaction.response.send_message(f"I didn't understand the send time '{remind_at}'")
@@ -112,8 +117,7 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
         log_info("reminder registered", set_reminder.name)
     except Exception as e:
         log_info(str(e))
-        await interaction.response.send_message(f"I didn't couldn't schedule that reminder :disappointed:",
-                                                set_reminder.name)
+        await interaction.response.send_message(f"I didn't couldn't schedule that reminder :disappointed:")
 
 
 @reminder_cmds.command(name="reminder_help", description="Print Help Text", guilds=app_conf.server.get_sync_guilds())
