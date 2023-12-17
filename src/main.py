@@ -5,10 +5,11 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-import dateparser
 import discord
+import pytz
 from discord import Interaction, Webhook, Intents, Client, app_commands
 from discord.app_commands import CommandTree
+from parsedatetime import parsedatetime, Calendar
 
 from config import app_conf
 from util.basic_log import log_info, log_debug, log_warn
@@ -49,44 +50,56 @@ async def before_serving():
     for guild in app_conf.server.get_sync_guilds():
         await reminder_cmds.sync(guild=guild)
 
-    with app_conf.server.get_reminder_file().open("r") as rfi:
-        for li in rfi.readlines():
+    reminders: list[Reminder] = []
+    with app_conf.server.get_reminder_file().open("r") as rfia:
+        for li in rfia.readlines():
             r: Reminder = Reminder(**json.loads(li))
-            if datetime.now() < r.get_runtime():
+            if datetime.now(tz=pytz.UTC) < r.get_runtime():
+                reminders.append(r)
                 asyncio.ensure_future(send_reminder(r))
 
-    log_info("discord commands synced, stored reminders loaded, starting client", before_serving.__name__)
+    if app_conf.server.clean_reminders_on_startup:
+        app_conf.server.get_reminder_file().open("w").close()
+        for rem in reminders:
+            rem.store(app_conf.server.get_reminder_file())
+
+    log_info(f"discord commands synced, {len(reminders)} stored reminders loaded, starting client",
+             before_serving.__name__)
     await discord_client.connect()
 
 
 async def send_reminder(reminder: Reminder):
-    dtnow: datetime = datetime.now()
+    dt_now: datetime = datetime.now(tz=pytz.UTC)
     log_debug(f"reminder created ({reminder.runtime}): {reminder.message}", send_reminder.__name__)
-    await asyncio.sleep((reminder.get_runtime() - dtnow).total_seconds())
+    await asyncio.sleep((reminder.get_runtime() - dt_now).total_seconds())
     log_debug(f"sending reminder", send_reminder.__name__)
 
-    author_ping: str = f" @<{reminder.author}>" if reminder.ping_you else ""
+    author_ping: str = f" <@{reminder.author}>" if reminder.ping_you else ""
     await reminder.get_followup(discord_client).send(f"Reminder{author_ping}: {reminder.message}")
     log_info(f"reminder sent to {reminder.author}", send_reminder.__name__)
 
 
 @reminder_cmds.command(name="remind", description="Add a reminder using natural language",
                        guilds=app_conf.server.get_sync_guilds())
-async def set_reminder(interaction: Interaction, remind_at: str, message: str, ping_you: Optional[bool] = True):
+async def set_reminder(interaction: Interaction, remind_at: str, message: str, tz: Optional[str] = "US/Pacific",
+                       ping_you: Optional[bool] = True):
     try:
-        dtnow: datetime = datetime.now()
-        parsed_time: datetime = dateparser.parse(remind_at)
-        if parsed_time is None:
+
+        dt_now: datetime = datetime.now(tz=pytz.UTC)
+
+        cal: Calendar = parsedatetime.Calendar()
+        parsed_time, flag = cal.parseDT(datetimeString=remind_at, tzinfo=pytz.timezone(tz))
+        if flag == 0:
             log_warn(f"{remind_at} failed to parse", set_reminder.name)
             await interaction.response.send_message(f"I didn't understand the send time '{remind_at}'")
             return
-        if parsed_time < dtnow + timedelta(seconds=app_conf.server.min_reminder_s):
+        if parsed_time < dt_now + timedelta(seconds=app_conf.server.min_reminder_s):
             log_warn(f"{parsed_time.isoformat()} is in the past, no reminder", set_reminder.name)
             await interaction.response.send_message(
                 f"the reminder time needs to be at least {app_conf.server.min_reminder_s}s in the future")
             return
 
-        log_info(f"{remind_at} ({parsed_time.isoformat()} {(parsed_time - dtnow).total_seconds()}s): {message}",
+        log_info(f"{remind_at} ({parsed_time.isoformat()} {(parsed_time - dt_now).total_seconds()}s): {message}",
                  set_reminder.name)
 
         reminder: Reminder = Reminder(parsed_time.isoformat(), interaction.followup.url, message, interaction.user.id,
@@ -94,7 +107,8 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, p
         reminder.store(app_conf.server.get_reminder_file())
         asyncio.ensure_future(send_reminder(reminder))
 
-        await interaction.response.send_message(f"reminder set for {parsed_time.strftime('%a %d %b %Y, %I:%M:%S%p')}")
+        await interaction.response.send_message(
+            f"reminder set for '{remind_at}' at {parsed_time.strftime('%a %d %b %Y, %I:%M:%S%p')}")
         log_info("reminder registered", set_reminder.name)
     except Exception as e:
         log_info(str(e))
@@ -108,7 +122,7 @@ async def get_help(interaction: Interaction):
                       + "\tremind_at: Reminder time, accepts somewhat natural language\n"
                       + "\tmsg: Reminder message (`@mentions` are allowed)\n"
                       + "\tping_you: whether to ping the reminder author, "
-                      + "click `+1 option` to enable the parmaeter dropdown.\n"
+                      + "click `+1 option` to enable the parameter dropdown.\n"
                       + "\t\tExamples: 'in 4 hours', 'tomorrow at 9am', '8pm'\n"
                       + "/help: print help text")
 
@@ -116,6 +130,7 @@ async def get_help(interaction: Interaction):
 
 
 async def main():
+    log_debug(f"Config: {json.dumps(asdict(app_conf))}")
     await before_serving()
 
 

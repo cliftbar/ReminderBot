@@ -13,6 +13,7 @@ class ServerConfig:
     sync_guilds: list[int]
     min_reminder_s: int
     reminder_file: str
+    clean_reminders_on_startup: bool
 
     def get_sync_guilds(self) -> list[Object]:
         return [Object(gid) for gid in self.sync_guilds]
