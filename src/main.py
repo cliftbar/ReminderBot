@@ -8,7 +8,7 @@ from typing import Optional
 
 import discord
 import pytz
-from discord import Interaction, Webhook, Intents, Client, app_commands
+from discord import Interaction, Intents, Client, app_commands
 from discord.app_commands import CommandTree
 from parsedatetime import parsedatetime, Calendar
 from pytz.tzinfo import StaticTzInfo, DstTzInfo
@@ -20,13 +20,13 @@ from util.basic_log import log_info, log_debug, log_warn
 @dataclass
 class Reminder:
     runtime: str
-    followup: str
+    followup_chan: int
     message: str
     author: int
     ping_you: bool = True
 
-    def get_followup(self, ds_client: Client) -> Webhook:
-        return Webhook.from_url(self.followup, client=ds_client, bot_token=app_conf.server.bot_token)
+    def get_followup_chan(self, ds_client: Client):
+        return ds_client.get_channel(self.followup_chan)
 
     def store(self, reminder_file: Path):
         with reminder_file.open(mode="a") as rfi:
@@ -105,7 +105,8 @@ async def send_reminder(reminder: Reminder):
         log_debug(f"sending reminder", send_reminder.__name__)
 
         author_ping: str = f" <@{reminder.author}>" if reminder.ping_you else ""
-        await reminder.get_followup(discord_client).send(f"Reminder{author_ping}: {reminder.message}")
+        await reminder.get_followup_chan(discord_client).send(f"Reminder{author_ping}: {reminder.message}")
+        # await reminder.get_followup(discord_client).send(f"Reminder{author_ping}: {reminder.message}")
         log_info(f"reminder sent to {reminder.author}", send_reminder.__name__)
     except Exception as e:
         log_info(str(e), send_reminder.__name__)
@@ -138,7 +139,7 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
         log_info(f"{remind_at} ({parsed_time.isoformat()} {(parsed_time - dt_now).total_seconds()}s): {message}",
                  set_reminder.name)
 
-        reminder: Reminder = Reminder(parsed_time.isoformat(), interaction.followup.url, message, interaction.user.id,
+        reminder: Reminder = Reminder(parsed_time.isoformat(), interaction.channel_id, message, interaction.user.id,
                                       ping_you)
         reminder.store(app_conf.server.get_reminder_file())
         create_future(reminder)
