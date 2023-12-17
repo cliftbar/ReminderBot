@@ -70,6 +70,7 @@ def rewrite_all_reminders():
     for rem in reminders:
         rem.store(app_conf.server.get_reminder_file())
 
+
 async def before_serving():
     await discord_client.login(app_conf.server.bot_token)
 
@@ -150,8 +151,10 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
 async def list_reminders(interaction: Interaction):
     reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
     list_text = ("Reminders: \n"
-                 + "\n".join([f"({i+1}) {r[1].list_rep()}" for i, r in enumerate(reminders)]))
+                 + "\n".join([f"({i + 1}) {r[1].list_rep()}" for i, r in enumerate(reminders)]))
+    log_info(f"reminders listed for {interaction.user.id}", list_reminders.name)
     await interaction.response.send_message(list_text)
+
 
 @reminder_cmds.command(name="delete_reminder", description="Delete a reminder by index",
                        guilds=app_conf.server.get_sync_guilds())
@@ -165,6 +168,7 @@ async def delete_reminder(interaction: Interaction, index: int):
     deleted[0].cancel()
     all_futures[interaction.user.id] = reminders
     rewrite_all_reminders()
+    log_info(f"deleted reminder for {interaction.user.id}", delete_reminder.name)
     await interaction.response.send_message(f"Deleted {deleted[1].list_rep()}")
 
 
