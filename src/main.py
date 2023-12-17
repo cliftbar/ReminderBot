@@ -1,5 +1,6 @@
 import asyncio
 import json
+from asyncio import Future
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -14,11 +15,6 @@ from pytz.tzinfo import StaticTzInfo, DstTzInfo
 
 from config import app_conf
 from util.basic_log import log_info, log_debug, log_warn
-
-intents = Intents.default()
-intents.message_content = True
-discord_client: Client = discord.Client(intents=intents)
-reminder_cmds: CommandTree = app_commands.CommandTree(discord_client)
 
 
 @dataclass
@@ -39,6 +35,21 @@ class Reminder:
     def get_runtime(self) -> datetime:
         return datetime.fromisoformat(self.runtime)
 
+    def get_safe_dict(self) -> dict:
+        ret: dict = asdict(self)
+        ret.pop("followup")
+        return ret
+
+    def list_rep(self) -> str:
+        return f"{datetime.fromisoformat(self.runtime).strftime('%a %d %b %Y, %I:%M:%S%p')}: {self.message}"
+
+
+intents = Intents.default()
+intents.message_content = True
+discord_client: Client = discord.Client(intents=intents)
+reminder_cmds: CommandTree = app_commands.CommandTree(discord_client)
+all_futures: dict[int, list[tuple[Future, Reminder]]] = {}
+
 
 @discord_client.event
 async def on_ready():
@@ -57,7 +68,11 @@ async def before_serving():
             r: Reminder = Reminder(**json.loads(li))
             if datetime.now(tz=pytz.UTC) < r.get_runtime():
                 reminders.append(r)
-                asyncio.ensure_future(send_reminder(r))
+                reminder_future: Future = asyncio.ensure_future(send_reminder(r))
+
+                fl = all_futures.get(r.author, [])
+                fl.append((reminder_future, r))
+                all_futures[r.author] = fl
 
     if app_conf.server.clean_reminders_on_startup:
         app_conf.server.get_reminder_file().open("w").close()
@@ -110,7 +125,10 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
         reminder: Reminder = Reminder(parsed_time.isoformat(), interaction.followup.url, message, interaction.user.id,
                                       ping_you)
         reminder.store(app_conf.server.get_reminder_file())
-        asyncio.ensure_future(send_reminder(reminder))
+        reminder_future: Future = asyncio.ensure_future(send_reminder(reminder))
+        fl = all_futures.get(interaction.user.id, [])
+        fl.append((reminder_future, reminder))
+        all_futures[interaction.user.id] = fl
 
         await interaction.response.send_message(
             f"reminder set for '{remind_at}' at {parsed_time.strftime('%a %d %b %Y, %I:%M:%S%p')}")
@@ -118,6 +136,14 @@ async def set_reminder(interaction: Interaction, remind_at: str, message: str, t
     except Exception as e:
         log_info(str(e))
         await interaction.response.send_message(f"I didn't couldn't schedule that reminder :disappointed:")
+
+
+@reminder_cmds.command(name="reminder_list", description="Get the current reminders",
+                       guilds=app_conf.server.get_sync_guilds())
+async def list_reminders(interaction: Interaction):
+    reminders: list[tuple[Future, Reminder]] = all_futures.get(interaction.user.id, [])
+
+    await interaction.response.send_message("\n".join([r[1].list_rep() for r in reminders]))
 
 
 @reminder_cmds.command(name="reminder_help", description="Print Help Text", guilds=app_conf.server.get_sync_guilds())
